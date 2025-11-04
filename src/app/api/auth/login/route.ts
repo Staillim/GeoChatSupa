@@ -19,14 +19,14 @@ export async function POST(request: NextRequest) {
     // Por ahora, autenticación simple (sin hash de contraseña)
     // TODO: Implementar bcrypt para producción
     const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1 LIMIT 1',
-      [email]
+      'SELECT * FROM users WHERE email = $1 AND password_hash = $2 LIMIT 1',
+      [email, password]
     );
 
     if (result.rows.length === 0) {
       return NextResponse.json(
-        { error: 'Usuario no encontrado' },
-        { status: 404 }
+        { error: 'Email o contraseña incorrectos' },
+        { status: 401 }
       );
     }
 

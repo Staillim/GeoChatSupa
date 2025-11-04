@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
     // Por ahora, contraseña sin hash (solo para desarrollo)
     // TODO: Implementar bcrypt para producción
     const result = await pool.query(
-      `INSERT INTO users (id, email, name, pin, is_online, created_at, updated_at, last_seen) 
-       VALUES (gen_random_uuid(), $1, $2, $3, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) 
+      `INSERT INTO users (id, email, name, password_hash, pin, is_online, created_at, updated_at, last_seen) 
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) 
        RETURNING id, email, name, avatar, bio, pin`,
-      [email, name, pin]
+      [email, name, password, pin]
     );
 
     const user = result.rows[0];

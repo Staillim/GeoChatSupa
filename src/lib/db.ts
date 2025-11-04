@@ -17,15 +17,20 @@ let pool: Pool | null = null;
  */
 export function getPool(): Pool {
   if (!pool) {
+    const connectionString = process.env.DATABASE_URL;
+    
+    if (!connectionString) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+
     pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432'),
-      database: process.env.POSTGRES_DB || 'geochat',
-      user: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || '',
+      connectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
       max: 20, // Maximum number of clients in the pool
       idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
       connectionTimeoutMillis: 2000, // Return an error if connection takes more than 2 seconds
+      // Set search_path to include public schema
+      options: '-c search_path=public,extensions',
     });
 
     // Handle pool errors
@@ -34,7 +39,7 @@ export function getPool(): Pool {
       process.exit(-1);
     });
 
-    console.log('✅ PostgreSQL connection pool created');
+    console.log('✅ PostgreSQL connection pool created with DATABASE_URL');
   }
 
   return pool;

@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUser } from '@/hooks/use-postgres-user';
+import { useUserData } from '@/hooks/use-postgres-data';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useState, useRef, useEffect } from 'react';
 import { RefreshCw, Copy, Check, Camera, Upload, Loader2 } from 'lucide-react';
@@ -24,6 +25,7 @@ import { putData } from '@/lib/api-client';
 
 export default function ProfilePage() {
     const { user, userProfile, isUserLoading } = useUser();
+    const { mutate } = useUserData(user?.uid || null); // Para refrescar datos
     const [isRegeneratingPin, setIsRegeneratingPin] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
     const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -145,6 +147,9 @@ export default function ProfilePage() {
                 avatar: croppedImageBase64
             });
             
+            // Refrescar los datos del usuario inmediatamente
+            await mutate();
+            
             toast({
                 title: '✅ Foto actualizada',
                 description: 'Tu foto de perfil se ha actualizado correctamente',
@@ -174,6 +179,9 @@ export default function ProfilePage() {
                 name: editedDisplayName.trim(),
                 bio: editedBio.trim(),
             });
+
+            // Refrescar los datos del usuario inmediatamente
+            await mutate();
 
             toast({
                 title: '✅ Perfil actualizado',
