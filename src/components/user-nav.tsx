@@ -12,38 +12,33 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LogOut, Settings, User } from 'lucide-react';
-import { useAuth, useFirestore } from '@/firebase';
-import { useDoc } from '@/firebase/firestore/use-doc';
-import { useMemo } from 'react';
-import { doc } from 'firebase/firestore';
+import { useUser } from '@/hooks/use-postgres-user';
+import { signOut } from '@/lib/auth-provider';
 
 export function UserNav() {
-    const auth = useAuth();
-    const firestore = useFirestore();
-    
-    const userDocRef = useMemo(() => {
-      if (!auth.currentUser?.uid) return null;
-      return doc(firestore, 'users', auth.currentUser.uid);
-    }, [auth.currentUser?.uid, firestore]);
-    
-    const { data: userProfile } = useDoc(userDocRef);
+  const { user, userProfile } = useUser();
+
+  if (!user) return null;
+
+  const displayName = userProfile?.name || user.displayName || 'Usuario';
+  const photoURL = userProfile?.avatar || user.photoURL;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <Avatar className="h-9 w-9">
-             <AvatarImage src={userProfile?.photoURL || undefined} alt={auth.currentUser?.displayName || 'Usuario'} />
-            <AvatarFallback>{auth.currentUser?.displayName?.charAt(0) || 'U'}</AvatarFallback>
+            <AvatarImage src={photoURL || undefined} alt={displayName} />
+            <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{auth.currentUser?.displayName || 'Usuario'}</p>
+            <p className="text-sm font-medium leading-none">{displayName}</p>
             <p className="text-xs leading-none text-muted-foreground">
-              {auth.currentUser?.email}
+              {user.email}
             </p>
           </div>
         </DropdownMenuLabel>
@@ -61,9 +56,9 @@ export function UserNav() {
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => auth.signOut()}>
-            <LogOut className="mr-2 h-4 w-4" />
-            <span>Cerrar Sesión</span>
+        <DropdownMenuItem onClick={signOut}>
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Cerrar Sesión</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

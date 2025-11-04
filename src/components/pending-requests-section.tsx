@@ -1,19 +1,13 @@
 "use client";
 
-import { useChatRequests } from '@/firebase/firestore/use-chat-requests';
-import { useAcceptChatRequest } from '@/firebase/firestore/use-accept-chat-request';
-import { useRejectChatRequest } from '@/firebase/firestore/use-reject-chat-request';
-import { useUser } from '@/firebase/auth/use-user';
-import { useDoc } from '@/firebase/firestore/use-doc';
+import { useChatRequests, useAcceptChatRequest, useRejectChatRequest } from '@/hooks/use-chat-requests-postgres';
+import { useUser } from '@/hooks/use-postgres-user';
+import { useUserData } from '@/hooks/use-postgres-data';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Check, X, Loader2 } from 'lucide-react';
-import { doc } from 'firebase/firestore';
-import { initializeFirebase } from '@/firebase';
-import { useMemo, useState } from 'react';
-
-const { firestore } = initializeFirebase();
+import { useState } from 'react';
 
 interface RequestItemProps {
   request: {
@@ -29,16 +23,27 @@ function RequestItem({ request }: RequestItemProps) {
   const { rejectRequest } = useRejectChatRequest();
 
   // Obtener datos del usuario que envió la solicitud
-  const fromUserDocRef = useMemo(() => {
-    if (!request.fromUserId) return null;
-    return doc(firestore, 'users', request.fromUserId);
-  }, [request.fromUserId]);
+  const { user: fromUser, isLoading } = useUserData(request.fromUserId);
 
-  const { data: fromUser } = useDoc(fromUserDocRef);
-
-  const displayName = fromUser?.displayName || fromUser?.email?.split('@')[0] || 'Usuario';
-  const photoURL = fromUser?.photoURL || null;
+  const displayName = fromUser?.name || fromUser?.email?.split('@')[0] || 'Usuario';
+  const photoURL = fromUser?.avatar || null;
   const initials = displayName.charAt(0).toUpperCase();
+
+  if (isLoading) {
+    return (
+      <Card className="overflow-hidden">
+        <CardContent className="p-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+              <div className="h-3 w-32 bg-muted rounded animate-pulse" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const handleAccept = async () => {
     setIsProcessing(true);

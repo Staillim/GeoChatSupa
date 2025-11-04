@@ -3,8 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Navigation, Loader2, Send, Check, X, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useLocationSharingPermission } from '@/firebase/firestore/use-location-sharing-permission';
-import { useLiveLocationSharing } from '@/firebase/firestore/use-live-location-sharing';
+import { useLocationSharingPermission, useLiveLocationSharing } from '@/hooks/use-live-location-postgres';
 import {
   AlertDialog,
   AlertDialogAction,

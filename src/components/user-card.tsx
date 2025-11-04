@@ -5,19 +5,20 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserPlus, Loader2, Check, X } from "lucide-react";
-import { useSendChatRequest } from "@/firebase/firestore/use-send-chat-request";
+import { useSendChatRequest } from "@/hooks/use-send-chat-request-postgres";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-interface FirestoreUser {
-  uid: string;
-  email?: string;
-  displayName?: string;
-  photoURL?: string;
+interface SearchUser {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string | null;
+  bio: string | null;
   pin?: string;
 }
 
 interface UserCardProps {
-  user: FirestoreUser;
+  user: SearchUser;
   onRequestSent?: () => void;
 }
 
@@ -29,7 +30,7 @@ export function UserCard({ user, onRequestSent }: UserCardProps) {
   const [requestSent, setRequestSent] = useState(false);
 
   const handleSendRequest = async () => {
-    const result = await sendRequest(user.uid);
+    const result = await sendRequest(user.id);
     if (result) {
       setRequestSent(true);
       setTimeout(() => {
@@ -38,7 +39,7 @@ export function UserCard({ user, onRequestSent }: UserCardProps) {
     }
   };
 
-  const displayName = user.displayName || user.email || "Usuario";
+  const displayName = user.name || user.email || "Usuario";
   const initials = displayName
     .split(" ")
     .map((n) => n[0])
@@ -51,7 +52,7 @@ export function UserCard({ user, onRequestSent }: UserCardProps) {
       <CardHeader>
         <div className="flex items-center gap-4">
           <Avatar className="h-16 w-16">
-            <AvatarImage src={user.photoURL} alt={displayName} />
+            <AvatarImage src={user.avatar || ''} alt={displayName} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
           <div className="flex-1">

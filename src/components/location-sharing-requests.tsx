@@ -4,34 +4,34 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Navigation, Check, X, Users } from 'lucide-react';
-import { useFirestore } from '@/firebase';
-import { doc, updateDoc, arrayRemove, arrayUnion, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
-import { useUser } from '@/firebase/auth/use-user';
+import { Navigation, Check, X } from 'lucide-react';
+import { useUser } from '@/hooks/use-postgres-user';
 import { showNotification, NotificationTypes } from '@/hooks/use-notifications';
+import { fetcher, putData } from '@/lib/api-client';
 
 interface LocationRequest {
-  uid: string;
-  displayName: string;
-  photoURL?: string | null;
+  id: string;
+  name: string;
+  avatar?: string | null;
   email?: string | null;
 }
 
 export function LocationSharingRequests() {
-  const { user } = useUser();
-  const firestore = useFirestore();
+  const { user, userProfile } = useUser();
   const [requests, setRequests] = useState<LocationRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [processingUid, setProcessingUid] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRequests = async () => {
-      if (!firestore || !user?.uid) return;
+      if (!user?.uid) {
+        setIsLoading(false);
+        return;
+      }
       
       try {
-        const userDoc = await getDoc(doc(firestore, 'users', user.uid));
-        const userData = userDoc.data();
-        const requestUids = userData?.locationSharingRequests || [];
+        // Obtener IDs de usuarios que solicitan compartir ubicación
+        const requestUids = userProfile?.location_sharing_requests || [];
         
         if (requestUids.length === 0) {
           setRequests([]);
@@ -42,15 +42,18 @@ export function LocationSharingRequests() {
         // Obtener información de cada usuario que solicita
         const requestsData: LocationRequest[] = [];
         for (const uid of requestUids) {
-          const requesterDoc = await getDoc(doc(firestore, 'users', uid));
-          if (requesterDoc.exists()) {
-            const data = requesterDoc.data();
-            requestsData.push({
-              uid: uid,
-              displayName: data.displayName || data.email?.split('@')[0] || 'Usuario',
-              photoURL: data.photoURL || null,
-              email: data.email || null,
-            });
+          try {
+            const response = await fetcher(`/api/users/${uid}`);
+            if (response?.user) {
+              requestsData.push({
+                id: response.user.id,
+                name: response.user.name || response.user.email?.split('@')[0] || 'Usuario',
+                avatar: response.user.avatar || null,
+                email: response.user.email || null,
+              });
+            }
+          } catch (error) {
+            console.error(`Error fetching user ${uid}:`, error);
           }
         }
         
@@ -63,33 +66,38 @@ export function LocationSharingRequests() {
     };
     
     fetchRequests();
-  }, [firestore, user?.uid]);
+  }, [user?.uid, userProfile?.location_sharing_requests]);
 
   const handleAccept = async (requesterUid: string) => {
-    if (!firestore || !user?.uid) return;
+    if (!user?.uid) return;
     
     setProcessingUid(requesterUid);
     
     try {
-      const userRef = doc(firestore, 'users', user.uid);
+      // Obtener arrays actuales
+      const currentRequests = userProfile?.location_sharing_requests || [];
+      const currentSharing = userProfile?.location_sharing_with || [];
       
       // Remover de solicitudes y agregar a compartidos
-      await updateDoc(userRef, {
-        locationSharingRequests: arrayRemove(requesterUid),
-        locationSharingWith: arrayUnion(requesterUid)
+      const newRequests = currentRequests.filter((id: string) => id !== requesterUid);
+      const newSharing = [...currentSharing, requesterUid];
+      
+      await putData(`/api/users/${user.uid}`, {
+        location_sharing_requests: newRequests,
+        location_sharing_with: newSharing
       });
       
       // Encontrar el nombre del solicitante para la notificación
-      const requester = requests.find(r => r.uid === requesterUid);
+      const requester = requests.find(r => r.id === requesterUid);
       if (requester) {
         showNotification(
-          NotificationTypes.locationSharingAccepted(requester.displayName).title,
-          NotificationTypes.locationSharingAccepted(requester.displayName)
+          NotificationTypes.locationSharingAccepted(requester.name).title,
+          NotificationTypes.locationSharingAccepted(requester.name)
         );
       }
       
       // Actualizar estado local
-      setRequests(prev => prev.filter(r => r.uid !== requesterUid));
+      setRequests(prev => prev.filter(r => r.id !== requesterUid));
       
       console.log(`✅ Solicitud aceptada de ${requesterUid}`);
     } catch (error) {
@@ -101,20 +109,23 @@ export function LocationSharingRequests() {
   };
 
   const handleReject = async (requesterUid: string) => {
-    if (!firestore || !user?.uid) return;
+    if (!user?.uid) return;
     
     setProcessingUid(requesterUid);
     
     try {
-      const userRef = doc(firestore, 'users', user.uid);
+      // Obtener array actual de solicitudes
+      const currentRequests = userProfile?.location_sharing_requests || [];
       
-      // Solo remover de solicitudes
-      await updateDoc(userRef, {
-        locationSharingRequests: arrayRemove(requesterUid)
+      // Remover de solicitudes
+      const newRequests = currentRequests.filter((id: string) => id !== requesterUid);
+      
+      await putData(`/api/users/${user.uid}`, {
+        location_sharing_requests: newRequests
       });
       
       // Actualizar estado local
-      setRequests(prev => prev.filter(r => r.uid !== requesterUid));
+      setRequests(prev => prev.filter(r => r.id !== requesterUid));
       
       console.log(`❌ Solicitud rechazada de ${requesterUid}`);
     } catch (error) {
@@ -160,18 +171,18 @@ export function LocationSharingRequests() {
         
         {requests.map((request) => (
           <div 
-            key={request.uid}
+            key={request.id}
             className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-800"
           >
             <Avatar className="h-12 w-12 ring-2 ring-sky-400">
-              <AvatarImage src={request.photoURL || ''} alt={request.displayName} />
+              <AvatarImage src={request.avatar || ''} alt={request.name} />
               <AvatarFallback className="bg-gradient-to-br from-sky-400 to-blue-500 text-white font-bold">
-                {request.displayName.charAt(0).toUpperCase()}
+                {request.name.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm truncate">{request.displayName}</p>
+              <p className="font-medium text-sm truncate">{request.name}</p>
               {request.email && (
                 <p className="text-xs text-muted-foreground truncate">{request.email}</p>
               )}
@@ -180,8 +191,8 @@ export function LocationSharingRequests() {
             <div className="flex gap-2">
               <Button
                 size="sm"
-                onClick={() => handleAccept(request.uid)}
-                disabled={processingUid === request.uid}
+                onClick={() => handleAccept(request.id)}
+                disabled={processingUid === request.id}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 <Check className="h-4 w-4" />
@@ -189,8 +200,8 @@ export function LocationSharingRequests() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handleReject(request.uid)}
-                disabled={processingUid === request.uid}
+                onClick={() => handleReject(request.id)}
+                disabled={processingUid === request.id}
                 className="border-red-300 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/50"
               >
                 <X className="h-4 w-4" />

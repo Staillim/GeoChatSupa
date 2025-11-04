@@ -2,13 +2,11 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useParams } from 'next/navigation';
-import { useMessages } from '@/firebase/firestore/use-messages';
-import { useUser } from '@/firebase/auth/use-user';
-import { useDoc } from '@/firebase/firestore/use-doc';
-import { useFirestore, useMemoFirebase } from '@/firebase';
-import { useMarkAsRead } from '@/firebase/firestore/use-mark-as-read';
-import { useMarkMessagesRead } from '@/firebase/firestore/use-mark-messages-read';
-import { doc } from 'firebase/firestore';
+import { useMessages } from '@/hooks/use-messages-postgres';
+import { useUser } from '@/hooks/use-postgres-user';
+import { useConversation } from '@/hooks/use-conversation-postgres';
+import { useMarkAsRead } from '@/hooks/use-mark-as-read-postgres';
+import { useMarkMessagesRead } from '@/hooks/use-mark-messages-read-postgres';
 import { useEffect, useRef, useState } from 'react';
 import { CheckCheck, MapPin, ExternalLink } from 'lucide-react';
 import { Sparkles } from 'lucide-react';
@@ -23,7 +21,6 @@ export default function ChatPage() {
   const slug = params.slug as string[] | undefined;
   const conversationId = slug?.[0];
   const { user } = useUser();
-  const firestore = useFirestore();
   const { markAsRead } = useMarkAsRead();
   const { markMessagesRead } = useMarkMessagesRead();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -33,12 +30,7 @@ export default function ChatPage() {
   const { setSharedLocation } = useSharedLocation();
 
   // Obtener la conversación
-  const conversationRef = useMemoFirebase(() => {
-    if (!firestore || !conversationId) return null;
-    return doc(firestore, 'conversations', conversationId);
-  }, [firestore, conversationId]);
-
-  const { data: conversation, isLoading: isConversationLoading } = useDoc(conversationRef);
+  const { conversation, isLoading: isConversationLoading } = useConversation(conversationId || null);
   
   // Obtener los mensajes (pasando currentUserId para notificaciones)
   const { messages, isLoading: isMessagesLoading } = useMessages(conversationId, user?.uid);
@@ -70,7 +62,7 @@ export default function ChatPage() {
   // Marcar mensajes como leídos cuando se abre el chat
   useEffect(() => {
     if (conversationId && user?.uid && conversation) {
-      const unreadCount = conversation.unreadCount?.[user.uid] || 0;
+      const unreadCount = conversation.unread_count?.[user.uid] || 0;
       if (unreadCount > 0) {
         // Marcar el contador de conversación como leído
         markAsRead(conversationId, user.uid);
@@ -88,16 +80,16 @@ export default function ChatPage() {
 
   // Función para manejar click en ubicación compartida
   const handleLocationClick = (message: any) => {
-    if (!message.location) return;
+    if (!message.location_lat || !message.location_lng) return;
     
     // Guardar la ubicación compartida en el store
     setSharedLocation({
-      latitude: message.location.latitude,
-      longitude: message.location.longitude,
-      timestamp: message.location.timestamp,
-      duration: message.location.duration,
-      senderName: message.senderName || 'Usuario',
-      senderPhotoURL: message.senderPhotoURL,
+      latitude: Number(message.location_lat),
+      longitude: Number(message.location_lng),
+      timestamp: message.created_at || new Date().toISOString(),
+      duration: undefined,
+      senderName: message.sender_name || 'Usuario',
+      senderPhotoURL: message.sender_avatar || '',
     });
     
     // Navegar al mapa
@@ -138,8 +130,8 @@ export default function ChatPage() {
             ) : (
               <>
                 {messages.map((message, index) => {
-                  const isSender = message.senderId === user?.uid;
-                  const senderName = isSender ? 'Tú' : (message.senderName || 'Usuario');
+                  const isSender = message.sender_id === user?.uid;
+                  const senderName = isSender ? 'Tú' : (message.sender_name || 'Usuario');
                   const isLastMessage = index === messages.length - 1;
 
                   return (
@@ -188,17 +180,17 @@ export default function ChatPage() {
                       <div className="absolute -bottom-2 -left-2 w-12 h-12 bg-blue-300/20 dark:bg-blue-500/20 rounded-full blur-lg opacity-0 group-hover/message:opacity-100 transition-opacity duration-500 pointer-events-none floating-orb" style={{ animationDelay: '0.5s' }} />
                       
                       {/* Contenido del mensaje según el tipo */}
-                      {message.type === 'image' && message.imageBase64 ? (
+                      {message.image_url ? (
                         <div className="space-y-2">
                           <img
-                            src={message.imageBase64}
+                            src={message.image_url}
                             alt="Imagen compartida"
                             className="max-w-full w-auto max-h-64 rounded-lg cursor-pointer hover:opacity-90 transition-opacity object-contain"
-                            onClick={() => setSelectedImage(message.imageBase64!)}
+                            onClick={() => setSelectedImage(message.image_url!)}
                           />
                           <p className="text-xs opacity-80">📷 Imagen</p>
                         </div>
-                      ) : message.type === 'location' && message.location ? (
+                      ) : message.location_lat && message.location_lng ? (
                         <div className="space-y-3">
                           <div className="flex items-center gap-2 mb-2">
                             <MapPin className="h-4 w-4 flex-shrink-0" />
@@ -207,21 +199,14 @@ export default function ChatPage() {
                           
                           {/* Mini mapa preview */}
                           <LocationPreviewMap
-                            latitude={message.location.latitude}
-                            longitude={message.location.longitude}
+                            latitude={Number(message.location_lat)}
+                            longitude={Number(message.location_lng)}
                             onClick={() => handleLocationClick(message)}
                           />
                           
                           <p className="text-xs opacity-70 font-mono">
-                            {message.location.latitude.toFixed(6)}, {message.location.longitude.toFixed(6)}
+                            {Number(message.location_lat).toFixed(6)}, {Number(message.location_lng).toFixed(6)}
                           </p>
-                          
-                          {/* Mostrar duración si existe */}
-                          {message.location.duration && (
-                            <p className="text-xs opacity-80 flex items-center gap-1">
-                              ⏱️ Visible por {message.location.duration < 60 ? `${message.location.duration} min` : `${message.location.duration / 60} hora${message.location.duration > 60 ? 's' : ''}`}
-                            </p>
-                          )}
                           
                           <div className="flex gap-2">
                             <Button
@@ -248,7 +233,7 @@ export default function ChatPage() {
                                   : "hover:bg-sky-100 dark:hover:bg-sky-900/50"
                               )}
                               onClick={() => {
-                                const url = `https://www.openstreetmap.org/?mlat=${message.location!.latitude}&mlon=${message.location!.longitude}&zoom=15`;
+                                const url = `https://www.openstreetmap.org/?mlat=${Number(message.location_lat)}&mlon=${Number(message.location_lng)}&zoom=15`;
                                 window.open(url, '_blank');
                               }}
                             >
@@ -265,7 +250,7 @@ export default function ChatPage() {
                         "text-xs mt-1 relative z-10 flex items-center gap-1.5",
                         isSender ? 'text-white/80 justify-end' : 'text-muted-foreground'
                       )}>
-                        <span>{message.timestamp?.toDate?.()?.toLocaleTimeString() || 'Ahora'}</span>
+                        <span>{new Date(message.created_at).toLocaleTimeString()}</span>
                         {/* Indicadores de lectura tipo WhatsApp - solo para mensajes enviados */}
                         {isSender && (
                           <span className="flex items-center">

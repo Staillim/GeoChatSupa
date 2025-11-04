@@ -22,9 +22,8 @@ import { NotificationBanner } from '@/components/notification-banner';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import React, { useEffect } from 'react';
-import { useUser } from '@/firebase/auth/use-user';
+import { useUser } from '@/hooks/use-postgres-user';
 import { SharedLocationProvider } from '@/hooks/use-shared-location-store';
-import { useConversationNotifications } from '@/firebase/firestore/use-conversation-notifications';
 
 const navItems = [
   { href: '/map', icon: Map, label: 'Mapa' },
@@ -69,9 +68,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const { user, isUserLoading } = useUser();
   const router = useRouter();
-  
-  // Escuchar notificaciones de conversaciones basadas en estado "pendiente"
-  useConversationNotifications(user?.uid);
 
   React.useEffect(() => {
     setIsMounted(true);

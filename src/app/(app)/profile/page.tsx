@@ -11,20 +11,16 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useUser } from '@/firebase/auth/use-user';
+import { useUser } from '@/hooks/use-postgres-user';
 import { Skeleton } from '@/components/ui/skeleton';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
-import { initializeFirebase } from '@/firebase';
 import { useState, useRef, useEffect } from 'react';
 import { RefreshCw, Copy, Check, Camera, Upload, Loader2 } from 'lucide-react';
 import { ImageCropDialog } from '@/components/image-crop-dialog';
 import { readFile, isValidImage } from '@/lib/image-utils';
-import { useUpdateProfilePhoto } from '@/firebase/firestore/use-update-profile-photo';
 import { useToast } from '@/hooks/use-toast';
 import { LocationSharingRequests } from '@/components/location-sharing-requests';
 import { NotificationPermissionCard } from '@/components/notification-permission-card';
-
-const { firestore } = initializeFirebase();
+import { putData } from '@/lib/api-client';
 
 export default function ProfilePage() {
     const { user, userProfile, isUserLoading } = useUser();
@@ -33,7 +29,7 @@ export default function ProfilePage() {
     const [imageSrc, setImageSrc] = useState<string | null>(null);
     const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { updateProfilePhoto, isUpdating } = useUpdateProfilePhoto();
+    const [isUpdating, setIsUpdating] = useState(false);
     const { toast } = useToast();
     
     // Estados para edición de perfil
@@ -72,36 +68,23 @@ export default function ProfilePage() {
         setIsRegeneratingPin(true);
         try {
             const newPin = Math.floor(100000 + Math.random() * 900000).toString();
-            const userDocRef = doc(firestore, 'users', user.uid);
             
-            // Primero verificar si el documento existe
-            const { getDoc } = await import('firebase/firestore');
-            const docSnap = await getDoc(userDocRef);
-            
-            if (!docSnap.exists()) {
-                // Si no existe, crear el documento completo
-                console.log('📝 Documento no existe, creándolo...');
-                await setDoc(userDocRef, {
-                    uid: user.uid,
-                    email: user.email,
-                    displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
-                    photoURL: user.photoURL || null,
-                    pin: newPin,
-                    createdAt: new Date().toISOString(),
-                });
-            } else {
-                // Si existe, solo actualizar el PIN
-                console.log('🔄 Actualizando PIN existente...');
-                await updateDoc(userDocRef, {
-                    pin: newPin
-                });
-            }
+            await putData(`/api/users/${user.uid}`, {
+                pin: newPin
+            });
             
             console.log('✅ PIN regenerado:', newPin);
-            alert(`Nuevo PIN generado: ${newPin}`);
+            toast({
+                title: '✅ PIN actualizado',
+                description: `Tu nuevo PIN es: ${newPin}`,
+            });
         } catch (error) {
             console.error('❌ Error al regenerar PIN:', error);
-            alert('Error al regenerar el PIN: ' + (error as Error).message);
+            toast({
+                title: 'Error',
+                description: 'No se pudo regenerar el PIN',
+                variant: 'destructive',
+            });
         } finally {
             setIsRegeneratingPin(false);
         }
@@ -156,19 +139,25 @@ export default function ProfilePage() {
     const handleCropComplete = async (croppedImageBase64: string) => {
         if (!user) return;
 
-        const success = await updateProfilePhoto(user.uid, croppedImageBase64);
-        
-        if (success) {
+        setIsUpdating(true);
+        try {
+            await putData(`/api/users/${user.uid}`, {
+                avatar: croppedImageBase64
+            });
+            
             toast({
                 title: '✅ Foto actualizada',
                 description: 'Tu foto de perfil se ha actualizado correctamente',
             });
-        } else {
+        } catch (error) {
+            console.error('Error al actualizar foto:', error);
             toast({
                 title: 'Error',
                 description: 'No se pudo actualizar la foto de perfil',
                 variant: 'destructive',
             });
+        } finally {
+            setIsUpdating(false);
         }
     };
 
@@ -181,12 +170,9 @@ export default function ProfilePage() {
 
         setIsSavingProfile(true);
         try {
-            const userDocRef = doc(firestore, 'users', user.uid);
-            
-            await updateDoc(userDocRef, {
-                displayName: editedDisplayName.trim(),
+            await putData(`/api/users/${user.uid}`, {
+                name: editedDisplayName.trim(),
                 bio: editedBio.trim(),
-                updatedAt: new Date().toISOString(),
             });
 
             toast({
@@ -249,18 +235,10 @@ export default function ProfilePage() {
         );
     }
 
-    const displayName = userProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Usuario';
+    const displayName = userProfile?.name || user.displayName || user.email?.split('@')[0] || 'Usuario';
     const email = user.email || '';
     const bio = userProfile?.bio || '';
-    
-    // Verificar el PIN - está guardado directamente en el documento del usuario
-    console.log('🔍 Buscando PIN...');
-    console.log('userProfile completo:', JSON.stringify(userProfile, null, 2));
-    
     const pin = userProfile?.pin || 'No disponible';
-    
-    console.log('PIN encontrado:', pin);
-    console.log('Tipo de PIN:', typeof pin);
 
     return (
         <div className="h-full w-full overflow-y-auto custom-scrollbar">
@@ -286,7 +264,7 @@ export default function ProfilePage() {
                     <div className="flex items-center gap-4">
                         <div className="relative group">
                             <Avatar className="h-24 w-24 ring-4 ring-sky-200 dark:ring-sky-700 shadow-lg shadow-sky-300/50 dark:shadow-sky-800/50 transition-all duration-300 group-hover:scale-105">
-                                <AvatarImage src={userProfile?.photoURL || user.photoURL || ''} alt={displayName} />
+                                <AvatarImage src={userProfile?.avatar || user.photoURL || ''} alt={displayName} />
                                 <AvatarFallback className="text-3xl bg-gradient-to-br from-sky-400 to-blue-500 text-white font-bold">
                                     {displayName.charAt(0).toUpperCase()}
                                 </AvatarFallback>

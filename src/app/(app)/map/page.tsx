@@ -1,9 +1,7 @@
 'use client';
 import dynamic from 'next/dynamic';
-import { useUser } from '@/firebase/auth/use-user';
-import { useUsers } from '@/firebase/firestore/use-users';
-import { useSharedLocations } from '@/firebase/firestore/use-shared-locations';
-import { useAllLiveLocations } from '@/firebase/firestore/use-all-live-locations';
+import { useUser } from '@/hooks/use-postgres-user';
+import { useAllUsers, useLiveLocations } from '@/hooks/use-postgres-data';
 import { Skeleton } from '@/components/ui/skeleton';
 
 // Importar MapComponent dinámicamente solo en el cliente para evitar errores de SSR con Leaflet
@@ -24,11 +22,10 @@ const MapComponent = dynamic(
 
 export default function MapPage() {
   const { user, userProfile, isUserLoading } = useUser();
-  const { users, isLoading: isUsersLoading } = useUsers();
-  const { locations: sharedLocations, isLoading: isLocationsLoading } = useSharedLocations(user?.uid);
-  const { liveLocations, isLoading: isLiveLocationsLoading } = useAllLiveLocations(user?.uid);
+  const { users, isLoading: isUsersLoading } = useAllUsers();
+  const { liveLocations, isLoading: isLiveLocationsLoading } = useLiveLocations(user?.uid);
 
-  if (isUserLoading || isUsersLoading || isLocationsLoading || isLiveLocationsLoading) {
+  if (isUserLoading || isUsersLoading || isLiveLocationsLoading) {
     return (
       <div className="h-full w-full flex items-center justify-center">
         <div className="space-y-4">
@@ -51,21 +48,34 @@ export default function MapPage() {
   }
 
   // Filtrar el usuario actual de la lista de usuarios
-  const otherUsers = users.filter(u => u.uid !== user.uid);
+  const otherUsers = users.filter(u => u.uid !== user.uid).map(u => ({
+    uid: u.uid || u.id,
+    email: u.email,
+    displayName: u.displayName || u.name,
+    lat: u.lat ?? undefined,
+    lng: u.lng ?? undefined,
+    photoURL: u.photoURL || u.avatar
+  }));
   
-  // Usar photoURL de userProfile (Firestore) si existe, sino de user (Auth)
+  // Usar photoURL de userProfile (PostgreSQL) si existe, sino de user (Auth)
   const currentUserPhoto = userProfile.photoURL || user.photoURL;
+  
+  // Transform live locations to match expected format
+  const transformedLiveLocations = liveLocations.map(loc => ({
+    id: loc.id,
+    userId: loc.userId || loc.user_id,
+    userName: loc.userName || 'Usuario',
+    userPhoto: loc.userPhoto || null,
+    latitude: loc.latitude,
+    longitude: loc.longitude,
+    lastUpdated: loc.lastUpdated as any, // Compatible with Firebase Timestamp
+    sharedWith: loc.sharedWith || loc.shared_with,
+    isActive: loc.isActive ?? true
+  })) as any; // Type assertion for Firebase compatibility
   
   console.log('🗺️ MapPage - Datos:', {
     totalUsers: users.length,
     otherUsers: otherUsers.length,
-    otherUsersData: otherUsers.map(u => ({
-      uid: u.uid,
-      displayName: u.displayName,
-      photoURL: u.photoURL,
-      lat: u.lat,
-      lng: u.lng
-    })),
     currentUser: {
       uid: user.uid,
       displayName: userProfile.displayName,
@@ -73,8 +83,7 @@ export default function MapPage() {
       lat: userProfile.lat,
       lng: userProfile.lng
     },
-    sharedLocations: sharedLocations.length,
-    liveLocations: liveLocations.length
+    liveLocations: transformedLiveLocations.length
   });
   
   return (
@@ -84,13 +93,13 @@ export default function MapPage() {
         currentUser={{
           uid: user.uid,
           email: user.email,
-          displayName: userProfile.displayName,
-          lat: userProfile.lat || 34.054,
-          lng: userProfile.lng || -118.242,
+          displayName: userProfile.displayName || user.displayName || 'Usuario',
+          lat: userProfile.lat ?? 34.054,
+          lng: userProfile.lng ?? -118.242,
           photoURL: currentUserPhoto
         }}
-        sharedLocations={sharedLocations}
-        liveLocations={liveLocations}
+        sharedLocations={[]} // TODO: Implementar shared locations desde PostgreSQL
+        liveLocations={transformedLiveLocations}
       />
     </div>
   );

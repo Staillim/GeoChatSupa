@@ -2,14 +2,14 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Logo } from '@/components/logo';
-import { useFirebase } from '@/firebase';
+import { useAuth } from '@/lib/auth-provider';
 
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isUserLoading } = useFirebase();
+  const { user, isUserLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {

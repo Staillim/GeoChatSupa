@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Search, AlertCircle } from "lucide-react";
 import { UserCard } from "./user-card";
-import { useSearchUserByPin } from "@/firebase/firestore/use-search-user-by-pin";
+import { useSearchUserByPin } from "@/hooks/use-search-user-postgres";
 
 interface SearchUserDialogProps {
   open: boolean;

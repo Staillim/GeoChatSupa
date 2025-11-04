@@ -11,13 +11,10 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, useFirestore } from '@/firebase';
-import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
+import { signIn } from '@/lib/auth-provider';
 import { useState } from 'react';
 
 export default function LoginPage() {
-  const auth = useAuth();
-  const firestore = useFirestore();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,11 +22,6 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   const handleSignIn = async () => {
-    if (!auth) {
-      setError("Servicio de autenticación no disponible.");
-      return;
-    }
-    
     if (!email || !password) {
       setError("Por favor, completa todos los campos.");
       return;
@@ -39,25 +31,16 @@ export default function LoginPage() {
     setError('');
     
     try {
-      await initiateEmailSignIn(auth, email, password, firestore);
-      console.log("Login exitoso, la redirección será manejada por el AuthLayout");
+      const result = await signIn(email, password);
+      
+      if (result.success) {
+        router.push('/map');
+      } else {
+        setError(result.error || 'Error durante el inicio de sesión');
+      }
     } catch (err: any) {
       console.error("Error en login:", err);
-      let errorMessage = "Error durante el inicio de sesión";
-      
-      if (err.code === 'auth/user-not-found') {
-        errorMessage = "No existe una cuenta con este correo electrónico";
-      } else if (err.code === 'auth/wrong-password') {
-        errorMessage = "Contraseña incorrecta";
-      } else if (err.code === 'auth/invalid-email') {
-        errorMessage = "Correo electrónico inválido";
-      } else if (err.code === 'auth/too-many-requests') {
-        errorMessage = "Demasiados intentos fallidos. Intenta más tarde";
-      } else if (err.code === 'auth/invalid-credential') {
-        errorMessage = "Credenciales inválidas. Verifica tu correo y contraseña";
-      }
-      
-      setError(errorMessage);
+      setError("Error durante el inicio de sesión");
     } finally {
       setIsLoading(false);
     }
@@ -121,9 +104,6 @@ export default function LoginPage() {
             disabled={isLoading}
           >
             {isLoading ? "Iniciando sesión..." : "Iniciar Sesión"}
-          </Button>
-          <Button variant="outline" className="w-full" disabled={isLoading}>
-            Iniciar Sesión con Google
           </Button>
         </div>
         <div className="mt-4 text-center text-sm">

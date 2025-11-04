@@ -5,36 +5,24 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useParams } from 'next/navigation';
-import { useConversations } from '@/firebase/firestore/use-conversations';
-import { useUser } from '@/firebase/auth/use-user';
+import { useConversations } from '@/hooks/use-postgres-data';
+import { useUser } from '@/hooks/use-postgres-user';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchUserFab } from '@/components/search-user-fab';
 import { PendingRequestsSection } from '@/components/pending-requests-section';
-import { useDoc } from '@/firebase/firestore/use-doc';
-import { doc } from 'firebase/firestore';
-import { initializeFirebase } from '@/firebase';
-import { useMemo } from 'react';
-
-const { firestore } = initializeFirebase();
 
 interface ConversationItemProps {
     conv: any;
     isActive: boolean;
     currentUserId: string;
+    participants: any[];
 }
 
-function ConversationItem({ conv, isActive, currentUserId }: ConversationItemProps) {
-    const participantId = conv.participants.find((p: string) => p !== currentUserId);
+function ConversationItem({ conv, isActive, currentUserId, participants }: ConversationItemProps) {
+    const otherParticipant = participants.find((p: any) => p.id !== currentUserId);
     
-    const participantDocRef = useMemo(() => {
-        if (!participantId) return null;
-        return doc(firestore, 'users', participantId);
-    }, [participantId]);
-
-    const { data: participantData } = useDoc(participantDocRef);
-
-    const displayName = participantData?.displayName || participantData?.email?.split('@')[0] || 'Usuario';
-    const photoURL = participantData?.photoURL || null;
+    const displayName = otherParticipant?.name || otherParticipant?.email?.split('@')[0] || 'Usuario';
+    const photoURL = otherParticipant?.avatar || null;
     const initials = displayName.charAt(0).toUpperCase();
 
     // Estados de la conversación
@@ -132,7 +120,7 @@ function ConversationItem({ conv, isActive, currentUserId }: ConversationItemPro
 function ConversationList() {
     const params = useParams();
     const { user } = useUser();
-    const { conversations, isLoading } = useConversations(user?.uid);
+    const { conversations, isLoading } = useConversations(user?.uid, 'active');
     const activeConversationId = params.slug?.[0];
 
     if (isLoading) {
@@ -167,7 +155,7 @@ function ConversationList() {
     return (
         <ScrollArea className="h-full">
             <div className="flex flex-col gap-2 p-4 pt-0">
-            {conversations.map((conv) => {
+            {conversations.map((conv: any) => {
                 const isActive = activeConversationId === conv.id;
                 
                 return (
@@ -176,6 +164,7 @@ function ConversationList() {
                         conv={conv}
                         isActive={isActive}
                         currentUserId={user?.uid || ''}
+                        participants={conv.participantsData || []}
                     />
                 );
             })}

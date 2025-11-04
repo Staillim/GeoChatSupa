@@ -10,25 +10,22 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/firebase';
-import { initiateEmailSignUp } from '@/firebase/non-blocking-login';
+import { signUp } from '@/lib/auth-provider';
+import { createUser } from '@/hooks/use-postgres-data';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { getFirestore } from 'firebase/firestore';
-
 
 export default function SignupPage() {
-  const auth = useAuth();
-  const firestore = getFirestore(auth.app);
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const handleSignUp = () => {
+  const handleSignUp = async () => {
     if (password !== confirmPassword) {
       toast({
         variant: "destructive",
@@ -37,16 +34,62 @@ export default function SignupPage() {
       });
       return;
     }
+    
     if (!name) {
-        toast({
-            variant: "destructive",
-            title: "El nombre es requerido",
-            description: "Por favor, introduce tu nombre completo.",
-        });
-        return;
+      toast({
+        variant: "destructive",
+        title: "El nombre es requerido",
+        description: "Por favor, introduce tu nombre completo.",
+      });
+      return;
     }
-    initiateEmailSignUp(auth, firestore, email, password, name);
-    // The redirection will be handled by the AppLayout guard
+
+    setIsLoading(true);
+    
+    try {
+      // Crear usuario en el sistema de autenticación
+      const authResult = await signUp(email, password, name);
+      
+      if (authResult.success && authResult.user) {
+        // Crear usuario en PostgreSQL
+        const dbResult = await createUser({
+          id: authResult.user.uid,
+          name: name,
+          email: email,
+          avatar: null,
+          is_online: true
+        });
+        
+        if (dbResult.success) {
+          toast({
+            title: "¡Cuenta creada!",
+            description: "Tu cuenta ha sido creada exitosamente.",
+          });
+          router.push('/map');
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Error al crear el perfil de usuario.",
+          });
+        }
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error al crear cuenta",
+          description: authResult.error || "Hubo un problema al crear tu cuenta.",
+        });
+      }
+    } catch (error) {
+      console.error('Error en signup:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Ocurrió un error inesperado.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -61,7 +104,14 @@ export default function SignupPage() {
         <div className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="first-name">Nombre Completo</Label>
-            <Input id="first-name" placeholder="Max Robinson" required value={name} onChange={(e) => setName(e.target.value)} />
+            <Input 
+              id="first-name" 
+              placeholder="Max Robinson" 
+              required 
+              value={name} 
+              onChange={(e) => setName(e.target.value)}
+              disabled={isLoading}
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="email">Correo Electrónico</Label>
@@ -72,21 +122,36 @@ export default function SignupPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={isLoading}
             />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password">Contraseña</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}/>
+            <Input 
+              id="password" 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading}
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="confirm-password">Confirmar Contraseña</Label>
-            <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}/>
+            <Input 
+              id="confirm-password" 
+              type="password" 
+              value={confirmPassword} 
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={isLoading}
+            />
           </div>
-          <Button type="button" className="w-full" onClick={handleSignUp}>
-            Crear una cuenta
-          </Button>
-          <Button variant="outline" className="w-full">
-            Registrarse con Google
+          <Button 
+            type="button" 
+            className="w-full" 
+            onClick={handleSignUp}
+            disabled={isLoading}
+          >
+            {isLoading ? "Creando cuenta..." : "Crear una cuenta"}
           </Button>
         </div>
         <div className="mt-4 text-center text-sm">

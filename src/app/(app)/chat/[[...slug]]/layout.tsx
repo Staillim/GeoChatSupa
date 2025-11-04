@@ -6,17 +6,26 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useParams } from 'next/navigation';
-import { useUser } from '@/firebase/auth/use-user';
-import { useDoc } from '@/firebase/firestore/use-doc';
-import { useFirestore, useMemoFirebase } from '@/firebase';
-import { useSendMessage, MessageData } from '@/firebase/firestore/use-send-message';
-import { doc } from 'firebase/firestore';
+import { useUser } from '@/hooks/use-postgres-user';
+import { useConversations, sendMessage as sendMessageAPI } from '@/hooks/use-postgres-data';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { UserProfileDialog } from '@/components/user-profile-dialog';
 import { AttachImageButton } from '@/components/attach-image-button';
 import { ShareLocationButton } from '@/components/share-location-button';
 import { LiveLocationButton } from '@/components/live-location-button';
+
+interface MessageData {
+  type: 'text' | 'image' | 'location';
+  text?: string;
+  imageBase64?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    timestamp: number;
+    duration?: number;
+  };
+}
 
 export default function ChatIndividualLayout({
   children,
@@ -27,68 +36,71 @@ export default function ChatIndividualLayout({
   const slug = params.slug as string[] | undefined;
   const conversationId = slug?.[0];
   const { user } = useUser();
-  const firestore = useFirestore();
   const [messageText, setMessageText] = useState('');
-  const { sendMessage, loading: isSending } = useSendMessage();
+  const [isSending, setIsSending] = useState(false);
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
 
-  // Obtener la conversación
-  const conversationRef = useMemoFirebase(() => {
-    if (!firestore || !conversationId) return null;
-    return doc(firestore, 'conversations', conversationId);
-  }, [firestore, conversationId]);
+  // Obtener conversaciones para encontrar la actual
+  const { conversations, isLoading: isConversationLoading } = useConversations(user?.uid);
+  
+  // Encontrar la conversación actual
+  const conversation = useMemo(() => {
+    return conversations.find((c: any) => c.id === conversationId);
+  }, [conversations, conversationId]);
 
-  const { data: conversation, isLoading: isConversationLoading } = useDoc(conversationRef);
+  // Obtener el otro participante de los datos ya cargados
+  const otherParticipant = useMemo(() => {
+    if (!conversation?.participantsData || !user?.uid) return null;
+    return conversation.participantsData.find((p: any) => p.id !== user.uid);
+  }, [conversation, user]);
 
-  // Obtener el ID del otro participante
-  const otherParticipantId = conversation?.participants?.find((p: string) => p !== user?.uid);
-
-  // Obtener los datos del otro participante
-  const otherParticipantRef = useMemoFirebase(() => {
-    if (!firestore || !otherParticipantId) return null;
-    return doc(firestore, 'users', otherParticipantId);
-  }, [firestore, otherParticipantId]);
-
-  const { data: otherParticipant } = useDoc(otherParticipantRef);
-
-  const otherUserDisplayName = otherParticipant?.displayName || otherParticipant?.email?.split('@')[0] || 'Usuario';
-  const otherUserPhotoURL = otherParticipant?.photoURL || null;
+  const otherUserDisplayName = otherParticipant?.name || otherParticipant?.email?.split('@')[0] || 'Usuario';
+  const otherUserPhotoURL = otherParticipant?.avatar || null;
   const otherUserInitials = otherUserDisplayName.charAt(0).toUpperCase();
 
   // Estados de la conversación
   const isPending = conversation?.status === 'pending';
   const isActive = conversation?.status === 'active';
-  const isCreator = conversation?.createdBy === user?.uid;
+  const isCreator = conversation?.created_by === user?.uid;
   const canSendMessages = isActive;
 
   const handleSendMessage = async () => {
     if (!messageText.trim() || !canSendMessages || !user || !conversationId) return;
     
-    const messageData: MessageData = {
-      type: 'text',
-      text: messageText,
-      senderName: user.displayName || user.email?.split('@')[0] || 'Usuario',
-      senderPhotoURL: user.photoURL || null,
-    };
-    
-    const success = await sendMessage(conversationId, user.uid, messageData);
-    
-    if (success) {
+    setIsSending(true);
+    try {
+      await sendMessageAPI(conversationId, {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sender_id: user.uid,
+        text: messageText,
+        read: false,
+      });
+      
       setMessageText('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+    } finally {
+      setIsSending(false);
     }
   };
 
   const handleImageSend = async (base64: string) => {
     if (!canSendMessages || !user || !conversationId) return;
     
-    const messageData: MessageData = {
-      type: 'image',
-      imageBase64: base64,
-      senderName: user.displayName || user.email?.split('@')[0] || 'Usuario',
-      senderPhotoURL: user.photoURL || null,
-    };
-    
-    await sendMessage(conversationId, user.uid, messageData);
+    setIsSending(true);
+    try {
+      await sendMessageAPI(conversationId, {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sender_id: user.uid,
+        text: '📷 Imagen',
+        image_url: base64,
+        read: false,
+      });
+    } catch (error) {
+      console.error('Error sending image:', error);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleLocationShare = async (location: { 
@@ -99,14 +111,21 @@ export default function ChatIndividualLayout({
   }) => {
     if (!canSendMessages || !user || !conversationId) return;
     
-    const messageData: MessageData = {
-      type: 'location',
-      location: location,
-      senderName: user.displayName || user.email?.split('@')[0] || 'Usuario',
-      senderPhotoURL: user.photoURL || null,
-    };
-    
-    await sendMessage(conversationId, user.uid, messageData);
+    setIsSending(true);
+    try {
+      await sendMessageAPI(conversationId, {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sender_id: user.uid,
+        text: '📍 Ubicación compartida',
+        location_lat: location.latitude,
+        location_lng: location.longitude,
+        read: false,
+      });
+    } catch (error) {
+      console.error('Error sending location:', error);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   if (!conversationId) {
@@ -228,10 +247,10 @@ export default function ChatIndividualLayout({
                 disabled={!canSendMessages || isSending}
               />
               {/* Botón de ubicación en tiempo real */}
-              {user?.uid && otherParticipantId && (
+              {user?.uid && otherParticipant?.id && (
                 <LiveLocationButton
                   currentUserId={user.uid}
-                  recipientId={otherParticipantId}
+                  recipientId={otherParticipant.id}
                   disabled={!canSendMessages || isSending}
                 />
               )}
@@ -271,11 +290,11 @@ export default function ChatIndividualLayout({
         open={isProfileDialogOpen}
         onClose={() => setIsProfileDialogOpen(false)}
         user={{
-          uid: otherParticipantId,
+          uid: otherParticipant?.id || '',
           displayName: otherUserDisplayName,
           photoURL: otherUserPhotoURL,
           email: otherParticipant?.email || null,
-          pin: otherParticipant?.pin || undefined,
+          pin: undefined,
           bio: otherParticipant?.bio || undefined,
         }}
       />
